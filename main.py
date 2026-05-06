@@ -165,6 +165,7 @@ def main():
     
     cnt = 0
     try:
+        data = None
         print("please input Ctrl-C and wait few seconds to terminalte this program.")
         while True:
             if is_use_i2c_can:
@@ -172,9 +173,8 @@ def main():
                 # print("Stored frame size:", size)
                 if size > 0:
                     data = i2c_can.read_can()  # Read CAN messages
-                    logfile.write(f"CAN [{data.id:03X}] {data.data_to_hex_str()}\n")
-                else:
-                    data = None
+                    if is_use_usb_storage:
+                        logfile.write(f"CAN [{data.id:03X}] {data.data_to_hex_str()}\n")
             
             if is_use_rotary_encoder:
                 val1 = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection
@@ -206,8 +206,9 @@ def main():
         pass
     
     finally:
-        logfile.close()
-        logfile = None
+        if is_use_usb_storage:
+            logfile.close()
+            logfile = None
         
         if is_use_lcd:
             lcd.close()
