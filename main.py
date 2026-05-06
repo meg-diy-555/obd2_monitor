@@ -137,6 +137,8 @@ def main():
     if is_use_i2c_can:
         ch_i2c = 1  # I2C channel, adjust as needed
         i2c_can = I2C_CAN(ch_i2c)
+        # Wait until the I2C CAN module is ready after startup.
+        time.sleep(1.0)
         
         
     

@@ -20,6 +20,8 @@ class CAN_MSG:
 class I2C_CAN:
     
     DEFAULT_I2C_ADDR    = 0X25
+    DEFAULT_RETRY_COUNT = 3
+    DEFAULT_RETRY_WAIT_SEC = 0.05
 
     def __init__(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR):
         """Initialize the I2C_CAN class.
@@ -60,8 +62,16 @@ class I2C_CAN:
         Returns:
             list: List of data bytes read from the register.
         """
-        data = self.smbus.read_i2c_block_data(self.i2c_can_address, reg.value, len)
-        return data
+        last_error = None
+        for attempt in range(self.DEFAULT_RETRY_COUNT):
+            try:
+                data = self.smbus.read_i2c_block_data(self.i2c_can_address, reg.value, len)
+                return data
+            except OSError as err:
+                last_error = err
+                if attempt < self.DEFAULT_RETRY_COUNT - 1:
+                    time.sleep(self.DEFAULT_RETRY_WAIT_SEC)
+        raise last_error
         
     def send_can(self, id:int, ext:int, len:int, data:list) -> None:
         """Send CAN message to the I2C CAN module.
