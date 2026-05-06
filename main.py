@@ -14,7 +14,35 @@ from lib.i2c_can import I2C_CAN
 is_use_rotary_encoder = True
 is_use_i2c_can = True
 is_use_lcd = True
-is_use_usb_storage = True
+is_use_usb_storage = False
+
+I2C_CAN_CH = 1
+I2C_CAN_ADDR = 0x25
+I2C_CAN_BAUD = I2C_CAN.I2C_CAN_BAUD.CAN_500KBPS.value
+I2C_INIT_RETRY_COUNT = 5
+I2C_INIT_RETRY_WAIT_SEC = 0.5
+
+
+def init_i2c_can():
+    """Initialize I2C-CAN module with retry."""
+    last_err = None
+    for attempt in range(1, I2C_INIT_RETRY_COUNT + 1):
+        try:
+            i2c_can = I2C_CAN(I2C_CAN_CH, I2C_CAN_ADDR)
+            i2c_can.begin(I2C_CAN_BAUD)
+            time.sleep(0.05)
+            print(
+                f"I2C-CAN initialized: ch={I2C_CAN_CH}, addr=0x{I2C_CAN_ADDR:02X}, baud={I2C_CAN_BAUD}"
+            )
+            return i2c_can
+        except OSError as err:
+            last_err = err
+            print(
+                f"I2C init failed ({attempt}/{I2C_INIT_RETRY_COUNT}): {err}. "
+                f"retry in {I2C_INIT_RETRY_WAIT_SEC:.1f}s"
+            )
+            time.sleep(I2C_INIT_RETRY_WAIT_SEC)
+    raise last_err
 
 class RotaryEncoderaWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
     def __init__(self, is_silent=True):
@@ -117,6 +145,7 @@ def serial_received(msg : str):
 def main():
     global rot_sw1, rot_sw2
     global logfile
+    global is_use_i2c_can
     
     if is_use_usb_storage:
         # path_to_usb にログを書き込む
@@ -135,10 +164,17 @@ def main():
         lcd = LCD1602(lcd_i2c_ch)
     
     if is_use_i2c_can:
-        ch_i2c = 1  # I2C channel, adjust as needed
-        i2c_can = I2C_CAN(ch_i2c)
-        # Wait until the I2C CAN module is ready after startup.
-        time.sleep(1.0)
+        try:
+            i2c_can = init_i2c_can()
+        except OSError as err:
+            print("I2C-CAN module initialization failed.")
+            print(f"Last error: {err}")
+            print("Check:")
+            print("- I2C is enabled: sudo raspi-config -> Interface Options -> I2C")
+            print("- Wiring (SDA/SCL/GND/3.3V) and pull-up resistors")
+            print("- Device address: run 'i2cdetect -y 1' and confirm 0x25")
+            print("- I2C bus number (some boards use bus 0)")
+            is_use_i2c_can = False
         
         
     
@@ -166,17 +202,29 @@ def main():
     
     
     cnt = 0
+    i2c_error_count = 0
     try:
         data = None
         print("please input Ctrl-C and wait few seconds to terminalte this program.")
         while True:
             if is_use_i2c_can:
-                size = i2c_can.check_receive()  # Read the size of stored frames
-                # print("Stored frame size:", size)
-                if size > 0:
-                    data = i2c_can.read_can()  # Read CAN messages
-                    if is_use_usb_storage:
-                        logfile.write(f"CAN [{data.id:03X}] {data.data_to_hex_str()}\n")
+                try:
+                    size = i2c_can.check_receive()  # Read the size of stored frames
+                    # print("Stored frame size:", size)
+                    if size > 0:
+                        data = i2c_can.read_can()  # Read CAN messages
+                        if is_use_usb_storage:
+                            logfile.write(f"CAN [{data.id:03X}] {data.data_to_hex_str()}\n")
+                        print(f"CAN [{data.id:03X}] {data.data_to_hex_str()}")
+                    else:
+                        data = None
+                    i2c_error_count = 0
+                except OSError as err:
+                    # Keep running even when the I2C device temporarily does not respond.
+                    i2c_error_count += 1
+                    data = None
+                    if i2c_error_count == 1 or i2c_error_count % 10 == 0:
+                        print(f"I2C read failed ({i2c_error_count}): {err}")
             
             if is_use_rotary_encoder:
                 val1 = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection

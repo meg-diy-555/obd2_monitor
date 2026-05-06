@@ -2,6 +2,7 @@
 import smbus2
 from enum import Enum
 import time
+import os
 
 class CAN_MSG:
     def __init__(self, id:int=0, ext:int=0, length:int=0, data:list=[]):
@@ -32,6 +33,11 @@ class I2C_CAN:
         self.i2c_ch = i2c_ch
         self.i2c_can_address = i2c_addr
         self.smbus = smbus2.SMBus(i2c_ch)  # Adjust the bus number as needed
+        self.debug_i2c = os.getenv("I2C_CAN_DEBUG", "0") == "1"
+        self._debug_fail_count = 0
+        # Zero/Zero2 W ではレジスタ指定後の待ち時間が短いと read が失敗しやすいため、
+        # 安全側の既定値を 20ms にする（必要なら環境変数で上書き可能）。
+        self.read_settle_sec = float(os.getenv("I2C_CAN_READ_SETTLE_SEC", "0.02"))
         
     def begin(self, speedset) -> None:
         """Initialize the I2C CAN module with the specified speed.
@@ -63,14 +69,62 @@ class I2C_CAN:
             list: List of data bytes read from the register.
         """
         last_error = None
+        debug_errors = []
         for attempt in range(self.DEFAULT_RETRY_COUNT):
+            # Strategy 0: SMBus byte-data read (often most compatible for 1-byte status regs)
+            if len == 1:
+                try:
+                    return [self.smbus.read_byte_data(self.i2c_can_address, reg.value)]
+                except OSError as err0:
+                    last_error = err0
+                    if self.debug_i2c:
+                        debug_errors.append(f"byte-data:{err0}")
+
+            # Strategy 1: repeated-start (write reg + read data)
+            try:
+                write_msg = smbus2.i2c_msg.write(self.i2c_can_address, [reg.value])
+                read_msg = smbus2.i2c_msg.read(self.i2c_can_address, len)
+                self.smbus.i2c_rdwr(write_msg, read_msg)
+                return list(read_msg)
+            except OSError as err1:
+                last_error = err1
+                if self.debug_i2c:
+                    debug_errors.append(f"rs:{err1}")
+
+            # Strategy 2: stop-separated write/read
+            try:
+                self.smbus.write_byte(self.i2c_can_address, reg.value)
+                time.sleep(self.read_settle_sec)
+                if len == 1:
+                    data = [self.smbus.read_byte(self.i2c_can_address)]
+                else:
+                    data = []
+                    for _ in range(len):
+                        data.append(self.smbus.read_byte(self.i2c_can_address))
+                return data
+            except OSError as err2:
+                last_error = err2
+                if self.debug_i2c:
+                    debug_errors.append(f"stop:{err2}")
+
+            # Strategy 3: SMBus command read
             try:
                 data = self.smbus.read_i2c_block_data(self.i2c_can_address, reg.value, len)
                 return data
-            except OSError as err:
-                last_error = err
+            except OSError as err3:
+                last_error = err3
+                if self.debug_i2c:
+                    debug_errors.append(f"cmd:{err3}")
                 if attempt < self.DEFAULT_RETRY_COUNT - 1:
                     time.sleep(self.DEFAULT_RETRY_WAIT_SEC)
+
+        if self.debug_i2c:
+            self._debug_fail_count += 1
+            if self._debug_fail_count <= 3 or self._debug_fail_count % 10 == 0:
+                print(
+                    f"I2C_CAN debug fail #{self._debug_fail_count} "
+                    f"reg=0x{reg.value:02X} len={len} details={'; '.join(debug_errors)}"
+                )
         raise last_error
         
     def send_can(self, id:int, ext:int, len:int, data:list) -> None:
