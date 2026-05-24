@@ -16,32 +16,26 @@ is_use_i2c_can = True
 is_use_lcd = True
 is_use_usb_storage = False
 
-I2C_CAN_CH = 1
-I2C_CAN_ADDR = 0x25
-I2C_CAN_BAUD = I2C_CAN.I2C_CAN_BAUD.CAN_500KBPS.value
-I2C_INIT_RETRY_COUNT = 5
-I2C_INIT_RETRY_WAIT_SEC = 0.5
-
 
 def init_i2c_can():
     """Initialize I2C-CAN module with retry."""
     last_err = None
-    for attempt in range(1, I2C_INIT_RETRY_COUNT + 1):
+    for attempt in range(1, Config.I2C_INIT_RETRY_COUNT + 1):
         try:
-            i2c_can = I2C_CAN(I2C_CAN_CH, I2C_CAN_ADDR)
-            i2c_can.begin(I2C_CAN_BAUD)
+            i2c_can = I2C_CAN(Config.I2C_CAN_CH, Config.I2C_CAN_ADDR)
+            i2c_can.begin(Config.I2C_CAN_BAUD)
             time.sleep(0.05)
             print(
-                f"I2C-CAN initialized: ch={I2C_CAN_CH}, addr=0x{I2C_CAN_ADDR:02X}, baud={I2C_CAN_BAUD}"
+                f"I2C-CAN initialized: ch={Config.I2C_CAN_CH}, addr=0x{Config.I2C_CAN_ADDR:02X}, baud={Config.I2C_CAN_BAUD}"
             )
             return i2c_can
         except OSError as err:
             last_err = err
             print(
-                f"I2C init failed ({attempt}/{I2C_INIT_RETRY_COUNT}): {err}. "
-                f"retry in {I2C_INIT_RETRY_WAIT_SEC:.1f}s"
+                f"I2C init failed ({attempt}/{Config.I2C_INIT_RETRY_COUNT}): {err}. "
+                f"retry in {Config.I2C_INIT_RETRY_WAIT_SEC:.1f}s"
             )
-            time.sleep(I2C_INIT_RETRY_WAIT_SEC)
+            time.sleep(Config.I2C_INIT_RETRY_WAIT_SEC)
     raise last_err
 
 class RotaryEncoderaWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):

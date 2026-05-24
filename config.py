@@ -1,3 +1,5 @@
+from lib.i2c_can import I2C_CAN
+
 class Config:
 
     pin_id_rot_1_a = 17
@@ -27,4 +29,10 @@ class Config:
     text_rot_2_state_ab = "ROT2_AB\r\n"
 
     path_to_usb = "/home/meg/usb"
+    
+    I2C_CAN_CH = 1
+    I2C_CAN_ADDR = 0x25
+    I2C_CAN_BAUD = I2C_CAN.I2C_CAN_BAUD.CAN_500KBPS.value
+    I2C_INIT_RETRY_COUNT = 5
+    I2C_INIT_RETRY_WAIT_SEC = 0.5
 
