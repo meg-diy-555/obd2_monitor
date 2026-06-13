@@ -12,9 +12,9 @@ from lib.lcd1602 import LCD1602
 from lib.i2c_can import I2C_CAN
 
 is_use_rotary_encoder = True
-is_use_i2c_can = True
-is_use_lcd = True
-is_use_usb_storage = False
+is_use_i2c_can = False
+is_use_lcd = False
+is_use_usb_storage = True
 
 
 def init_i2c_can():
@@ -65,18 +65,14 @@ class RotaryEncoderaWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
 
     def event_rot_sw_pushed(self):
         e_state = super().get_state()
-        print(f"RotaryEncoderaWithPushSwitchRGBLED_1: event_rot_sw_pushed: {e_state}")
+        # print(f"RotaryEncoderaWithPushSwitchRGBLED_1: event_rot_sw_pushed: {e_state}")
         if RotaryEncoderaWithPushSwitchRGBLED.State.OFF == e_state:
-            print(Config.text_rot_1_state_off)
             if not self.is_silent: print(Config.text_rot_1_state_off)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_R == e_state:
-            print(Config.text_rot_1_state_a)
             if not self.is_silent: print(Config.text_rot_1_state_a)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_G == e_state:
-            print(Config.text_rot_1_state_b)
             if not self.is_silent: print(Config.text_rot_1_state_b)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_RG == e_state:
-            print(Config.text_rot_1_state_ab)
             if not self.is_silent: print(Config.text_rot_1_state_ab)
         pass
 
@@ -107,22 +103,16 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
 
     def event_rot_sw_pushed(self):
         e_state = super().get_state()
-        print(f"RotaryEncoderaWithPushSwitchRGBLED_2: event_rot_sw_pushed: {e_state}")
+        # print(f"RotaryEncoderaWithPushSwitchRGBLED_2: event_rot_sw_pushed: {e_state}")
         if RotaryEncoderaWithPushSwitchRGBLED.State.OFF == e_state:
-            print(Config.text_rot_2_state_off)
             if not self.is_silent: print(Config.text_rot_2_state_off)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_R == e_state:
-            print(Config.text_rot_2_state_a)
             if not self.is_silent: print(Config.text_rot_2_state_a)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_G == e_state:
-            print(Config.text_rot_2_state_b)
             if not self.is_silent: print(Config.text_rot_2_state_b)
         elif RotaryEncoderaWithPushSwitchRGBLED.State.ON_RG == e_state:
-            print(Config.text_rot_2_state_ab)
             if not self.is_silent: print(Config.text_rot_2_state_ab)
         pass
-
-
 
 def serial_received(msg : str):
     global rot_sw1, rot_sw2
@@ -136,6 +126,38 @@ def serial_received(msg : str):
     elif(msg == "AUTOPILOT ALTITUDE SLOT INDEX:2\r\n"):
         rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_G)   # managed
 
+def chech_rotary_encoder_changed(val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev):
+    val1_psw = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection
+    val2_psw = GPIO.input(Config.pin_id_rot_2_push_sw)  # keep GPIO event detection
+    val_rot1_a = GPIO.input(Config.pin_id_rot_1_a)
+    val_rot1_b = GPIO.input(Config.pin_id_rot_1_b)
+    val_rot2_a = GPIO.input(Config.pin_id_rot_2_a)
+    val_rot2_b = GPIO.input(Config.pin_id_rot_2_b)
+    
+    # check if rotary encoder is changed
+    if val_rot1_a != val_rot1_a_prev or val_rot1_b != val_rot1_b_prev:
+        is_rot1_a_falling = ((val_rot1_a_prev == 1) and (val_rot1_a == 0))
+        is_rot1_b_falling = ((val_rot1_b_prev == 1) and (val_rot1_b == 0))
+        # check if direction is clockwise or counterclockwise
+        if is_rot1_a_falling and (val_rot1_b == 1):
+            rot_sw1.event_rot_sw_cw()
+        elif is_rot1_b_falling and (val_rot1_a == 1):
+            rot_sw1.event_rot_sw_ccw()
+
+        val_rot1_b_prev = val_rot1_b
+    
+    if val_rot2_a != val_rot2_a_prev or val_rot2_b != val_rot2_b_prev:
+        is_rot2_a_falling = ((val_rot2_a_prev == 1) and (val_rot2_a == 0))
+        is_rot2_b_falling = ((val_rot2_b_prev == 1) and (val_rot2_b == 0))
+        # check if direction is clockwise or counterclockwise
+        if is_rot2_a_falling and (val_rot2_b == 1):
+            rot_sw2.event_rot_sw_cw()
+        elif is_rot2_b_falling and (val_rot2_a == 1):
+            rot_sw2.event_rot_sw_ccw()
+    # print(f"RotaryEncoder: push_sw1: {val1_psw}, push_sw2: {val2_psw}")
+    return val_rot1_a, val_rot1_b, val_rot2_a, val_rot2_b, val1_psw, val2_psw
+
+            
 def main():
     global rot_sw1, rot_sw2
     global logfile
@@ -170,22 +192,8 @@ def main():
             print("- I2C bus number (some boards use bus 0)")
             is_use_i2c_can = False
         
-        
-    
     if is_use_rotary_encoder:
     # test
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_R)
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_R)
-        time.sleep(0.5)
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_G)
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_G)
-        time.sleep(0.5)
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_B)
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_B)
-        time.sleep(0.5)
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
-        time.sleep(0.5)    
         rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
         rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
         time.sleep(2.0)
@@ -194,12 +202,18 @@ def main():
         rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.OFF)
         time.sleep(0.5)
     
-    
     cnt = 0
     i2c_error_count = 0
     try:
         data = None
         print("please input Ctrl-C and wait few seconds to terminalte this program.")
+        
+        # store previous value of rotary encoders
+        val_rot1_a_prev = GPIO.input(Config.pin_id_rot_1_a)
+        val_rot1_b_prev = GPIO.input(Config.pin_id_rot_1_b)
+        val_rot2_a_prev = GPIO.input(Config.pin_id_rot_2_a)
+        val_rot2_b_prev = GPIO.input(Config.pin_id_rot_2_b)
+        
         while True:
             if is_use_i2c_can:
                 try:
@@ -221,9 +235,8 @@ def main():
                         print(f"I2C read failed ({i2c_error_count}): {err}")
             
             if is_use_rotary_encoder:
-                val1 = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection
-                val2 = GPIO.input(Config.pin_id_rot_2_push_sw)  # keep GPIO event detection
-            
+                val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev, val1_psw, val2_psw = chech_rotary_encoder_changed(val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev)
+                
             if is_use_lcd:
                 lcd.home()
                 if data:
@@ -241,7 +254,7 @@ def main():
                 
                 lcd.setCursor(0, 1)
                 if is_use_rotary_encoder:
-                    lcd.print(f"[{cnt}]sw:{val1},{val2}")
+                    lcd.print(f"[{cnt}]sw:{val1_psw},{val2_psw}")
         
                 # print(f"[{cnt}]rot_push_sw: {val1}, {val2}")
                 cnt += 1
