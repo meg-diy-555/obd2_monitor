@@ -11,13 +11,13 @@ from switch import RotaryEncoderaWithPushSwitchRGBLED
 from lib.lcd1602 import LCD1602
 from lib.i2c_can import I2C_CAN
 
+is_silent = True
 is_use_rotary_encoder = True
 is_use_i2c_can = False
 is_use_lcd = False
 is_use_usb_storage = True
 
-
-def init_i2c_can():
+def init_i2c_can(is_silent=True):
     """Initialize I2C-CAN module with retry."""
     last_err = None
     for attempt in range(1, Config.I2C_INIT_RETRY_COUNT + 1):
@@ -25,7 +25,7 @@ def init_i2c_can():
             i2c_can = I2C_CAN(Config.I2C_CAN_CH, Config.I2C_CAN_ADDR)
             i2c_can.begin(Config.I2C_CAN_BAUD)
             time.sleep(0.05)
-            print(
+            if not is_silent: print(
                 f"I2C-CAN initialized: ch={Config.I2C_CAN_CH}, addr=0x{Config.I2C_CAN_ADDR:02X}, baud={Config.I2C_CAN_BAUD}"
             )
             return i2c_can
@@ -55,12 +55,10 @@ class RotaryEncoderaWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
 
     def event_rot_sw_cw(self):
         if not self.is_silent: print(Config.text_rot_1_cw)
-        print(Config.text_rot_1_cw)
         pass
 
     def event_rot_sw_ccw(self):
         if not self.is_silent: print(Config.text_rot_1_ccw)
-        print(Config.text_rot_1_ccw)
         pass
 
     def event_rot_sw_pushed(self):
@@ -93,12 +91,10 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
 
     def event_rot_sw_cw(self):
         if not self.is_silent: print(Config.text_rot_2_cw)
-        print(Config.text_rot_2_cw)
         pass
 
     def event_rot_sw_ccw(self):
         if not self.is_silent: print(Config.text_rot_2_ccw)
-        print(Config.text_rot_2_ccw)
         pass
 
     def event_rot_sw_pushed(self):
@@ -114,17 +110,10 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
             if not self.is_silent: print(Config.text_rot_2_state_ab)
         pass
 
-def serial_received(msg : str):
+def serial_received(msg : str, is_silent=True):
     global rot_sw1, rot_sw2
-    print(msg)
-    if(msg == "AUTOPILOT VS SLOT INDEX:1\r\n"):
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_R)   # unmanaged
-    elif(msg == "AUTOPILOT VS SLOT INDEX:2\r\n"):
-        rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_G)   # managed
-    elif(msg == "AUTOPILOT ALTITUDE SLOT INDEX:1\r\n"):
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_R)   # unmanaged
-    elif(msg == "AUTOPILOT ALTITUDE SLOT INDEX:2\r\n"):
-        rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_G)   # managed
+    if not is_silent: print(msg)
+    pass
 
 def chech_rotary_encoder_changed(val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev):
     val1_psw = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection
@@ -154,7 +143,6 @@ def chech_rotary_encoder_changed(val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_pr
             rot_sw2.event_rot_sw_cw()
         elif is_rot2_b_falling and (val_rot2_a == 1):
             rot_sw2.event_rot_sw_ccw()
-    # print(f"RotaryEncoder: push_sw1: {val1_psw}, push_sw2: {val2_psw}")
     return val_rot1_a, val_rot1_b, val_rot2_a, val_rot2_b, val1_psw, val2_psw
 
             
@@ -196,7 +184,7 @@ def main():
     # test
         rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
         rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.ON_RGB)
-        time.sleep(2.0)
+        time.sleep(0.5)
     
         rot_sw1.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.OFF)
         rot_sw2.set_state(RotaryEncoderaWithPushSwitchRGBLED.State.OFF)
@@ -206,7 +194,7 @@ def main():
     i2c_error_count = 0
     try:
         data = None
-        print("please input Ctrl-C and wait few seconds to terminalte this program.")
+        if not is_silent: print("please input Ctrl-C and wait few seconds to terminalte this program.")
         
         # store previous value of rotary encoders
         val_rot1_a_prev = GPIO.input(Config.pin_id_rot_1_a)
@@ -223,7 +211,7 @@ def main():
                         data = i2c_can.read_can()  # Read CAN messages
                         if is_use_usb_storage:
                             logfile.write(f"CAN [{data.id:03X}] {data.data_to_hex_str()}\n")
-                        print(f"CAN [{data.id:03X}] {data.data_to_hex_str()}")
+                        if not is_silent: print(f"CAN [{data.id:03X}] {data.data_to_hex_str()}")
                     else:
                         data = None
                     i2c_error_count = 0
@@ -232,7 +220,7 @@ def main():
                     i2c_error_count += 1
                     data = None
                     if i2c_error_count == 1 or i2c_error_count % 10 == 0:
-                        print(f"I2C read failed ({i2c_error_count}): {err}")
+                        if not is_silent: print(f"I2C read failed ({i2c_error_count}): {err}")
             
             if is_use_rotary_encoder:
                 val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev, val1_psw, val2_psw = chech_rotary_encoder_changed(val_rot1_a_prev, val_rot1_b_prev, val_rot2_a_prev, val_rot2_b_prev)
@@ -277,7 +265,7 @@ def main():
             # rot_sw1.close()
             # rot_sw2.close()
         # serial.end()
-    print('exit')
+    if not is_silent: print('exit')
 
 if __name__ == "__main__":
     main()
