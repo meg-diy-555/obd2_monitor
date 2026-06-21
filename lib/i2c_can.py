@@ -18,13 +18,17 @@ class CAN_MSG:
     def __str__(self):
         return f"CAN_MSG(id={self.id:x}, ext={self.ext}, length={self.length}, data={self.data_to_hex_str()})"
     
+    
+    def is_valid_can_msg(self) -> bool:
+        return isinstance(self, CAN_MSG) and self.length > 0 and self.length <= 8
+
 class I2C_CAN:
     
     DEFAULT_I2C_ADDR    = 0X25
     DEFAULT_RETRY_COUNT = 3
     DEFAULT_RETRY_WAIT_SEC = 0.05
 
-    def __init__(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR):
+    def __init__(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR, event_can_received=None, is_silent=True):
         """Initialize the I2C_CAN class.
         Args:
             i2c_ch (int): I2C channel number (default is 1).
@@ -38,6 +42,66 @@ class I2C_CAN:
         # Zero/Zero2 W ではレジスタ指定後の待ち時間が短いと read が失敗しやすいため、
         # 安全側の既定値を 20ms にする（必要なら環境変数で上書き可能）。
         self.read_settle_sec = float(os.getenv("I2C_CAN_READ_SETTLE_SEC", "0.02"))
+        self.event_can_received = event_can_received
+        self.is_silent = is_silent
+    
+    def init_i2c_can(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR, is_silent=True):
+        """Initialize I2C-CAN module with retry."""
+        last_err = None
+        for attempt in range(1, self.DEFAULT_RETRY_COUNT + 1):
+            try:
+                i2c_can = I2C_CAN(i2c_ch, i2c_addr)
+                i2c_can.begin(self.DEFAULT_I2C_BAUD)
+                time.sleep(0.05)
+                if not is_silent: print(
+                    f"I2C-CAN initialized: ch={i2c_ch}, addr=0x{i2c_addr:02X}, baud={self.DEFAULT_I2C_BAUD}"
+                )
+                return i2c_can
+            except OSError as err:
+                last_err = err
+                print(
+                    f"I2C init failed ({attempt}/{self.DEFAULT_RETRY_COUNT}): {err}. "
+                    f"retry in {self.DEFAULT_RETRY_WAIT_SEC:.1f}s"
+                )
+                time.sleep(self.DEFAULT_RETRY_WAIT_SEC)
+        raise last_err
+    
+    def check_i2c_can_thread(self, is_silent=True):
+        """I2C CAN thread."""
+        global data, logfile, prev_valid_data
+        i2c_error_count = 0
+        try:
+            while True:
+                try:
+                    size = self.check_receive()  # Read the size of stored frames
+                    if size > 0:
+                        msg = self.read_can()
+                        if msg is not None and msg.is_valid_can_msg():
+                            data = msg
+                            prev_valid_data = msg
+                            # if is_use_usb_storage and logfile:
+                            #     logfile.write(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}\n")
+                            self.event_can_received(msg)
+                            if not is_silent:
+                                print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
+                        else:
+                            data = None
+                    else:
+                        data = None
+                    i2c_error_count = 0
+                except OSError as err:
+                    i2c_error_count += 1
+                    data = None
+                    if i2c_error_count == 1 or i2c_error_count % 10 == 0:
+                        if not is_silent:
+                            print(f"I2C read failed ({i2c_error_count}): {err}")
+                except Exception as err:
+                    data = None
+                    if not is_silent:
+                        print(f"check_i2c_can_thread error: {err}")
+                # time.sleep(0.01)
+        except KeyboardInterrupt:
+            pass
         
     def begin(self, speedset) -> None:
         """Initialize the I2C CAN module with the specified speed.
@@ -166,22 +230,21 @@ class I2C_CAN:
         sum  = sum & 0xff
         return sum
     
-    def read_can(self) -> CAN_MSG:
+    def read_can(self) -> CAN_MSG | None:
         """Read a CAN message from the I2C CAN module.
         Returns:
             CAN_MSG: An instance of the CAN_MSG class containing the received message.
-        """
-        """Read a CAN message from the I2C CAN module.
-        Returns:
-            CAN_MSG: An instance of the CAN_MSG class containing the received message.
+            None: If checksum is invalid or length is invalid.
         """
         data = self.__get_reg(self.I2C_CAN_REG.REG_RECV, 16)
         id = 0
         
+        print(f"read_can: {data}")  
+        
         checksum = self.__makeCheckSum(data[:-1])
         if checksum != data[-1]:
             print("Checksum error")
-            return []
+            return None
         id += data[0]
         id <<= 8
         id += data[1]
@@ -193,9 +256,9 @@ class I2C_CAN:
         ext = data[4]
         rtr = data[5]
         length = data[6]
-        if 8 < length < 0:
+        if length < 0 or length > 8:
             print("Invalid length")
-            return []
+            return None
         data = data[7:7+length]
         return CAN_MSG(id, ext, length, data)
     

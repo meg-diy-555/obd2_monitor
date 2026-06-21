@@ -36,3 +36,4 @@ class Config:
     I2C_INIT_RETRY_COUNT = 5
     I2C_INIT_RETRY_WAIT_SEC = 0.5
 
+    LCD_I2C_CH = 0
