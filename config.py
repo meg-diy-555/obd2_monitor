@@ -10,11 +10,8 @@ class Config:
     pin_id_led_1_b = 27
     text_rot_1_cw = "ROT1_CW"
     text_rot_1_ccw = "ROT1_CCW"
-    text_rot_1_state_off = "ROT1_ON"
-    text_rot_1_state_a = "ROT1_A"
-    text_rot_1_state_b = "ROT1_B"
-    text_rot_1_state_ab = "ROT1_AB"
-
+    text_rot_1_pushed = "ROT1_ON"
+    
     pin_id_rot_2_a = 6
     pin_id_rot_2_b = 13
     pin_id_rot_2_push_sw = 5
@@ -23,10 +20,7 @@ class Config:
     pin_id_led_2_b = 11
     text_rot_2_cw = "ROT2_CW"
     text_rot_2_ccw = "ROT2_CCW"
-    text_rot_2_state_off = "ROT2_ON"
-    text_rot_2_state_a = "ROT2_A"
-    text_rot_2_state_b = "ROT2_B"
-    text_rot_2_state_ab = "ROT2_AB"
+    text_rot_2_pushed = "ROT2_ON"
 
     path_to_usb = "/home/meg/usb"
     

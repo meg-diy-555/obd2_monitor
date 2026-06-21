@@ -7,7 +7,7 @@ import threading
 from config import Config
 
 # use RotaryEncoderaWithPushSwitchRGBLED
-from switch import RotaryEncoderaWithPushSwitchRGBLED, gpio_lock, RotaryEncoder
+from switch import RotaryEncoderWithPushSwitchRGBLED, gpio_lock, RotaryEncoder
 # use LCD
 from lib.lcd1602 import LCD1602
 from lib.i2c_can import I2C_CAN, CAN_MSG
@@ -20,7 +20,7 @@ is_use_usb_storage = True
 
 prev_psw_valid = 0
 val_psw2_valid = 0
-dir_rot_valid = 0
+dir_rot1_valid = 0
 dir_rot2_valid = 0
 data = None
 prev_valid_data = None
@@ -30,7 +30,7 @@ class InputData:
     rot_sw1 = RotaryEncoder.RotaryEncoderData()
     rot_sw2 = RotaryEncoder.RotaryEncoderData()
 
-class RotaryEncoderWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
+class RotaryEncoderWithPushSwitchRGBLED_1 (RotaryEncoderWithPushSwitchRGBLED):
     def __init__(self, is_silent=True):
         super().__init__(
             Config.pin_id_rot_1_a,
@@ -41,7 +41,8 @@ class RotaryEncoderWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
             Config.pin_id_led_1_b,
             self.event_rot_sw_cw,
             self.event_rot_sw_ccw,
-            self.event_rot_sw_pushed
+            self.event_sw_pushed,
+            is_use_event_pushswitch=False
         )
         self.is_silent = is_silent
 
@@ -53,20 +54,12 @@ class RotaryEncoderWithPushSwitchRGBLED_1 (RotaryEncoderaWithPushSwitchRGBLED):
         if not self.is_silent: print(Config.text_rot_1_ccw)
         pass
 
-    def event_rot_sw_pushed(self):
-        e_state = super().get_led_state()
-        # print(f"RotaryEncoderaWithPushSwitchRGBLED_1: event_rot_sw_pushed: {e_state}")
-        if RotaryEncoderaWithPushSwitchRGBLED.LED_State.OFF == e_state:
-            if not self.is_silent: print(Config.text_rot_1_state_off)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_R == e_state:
-            if not self.is_silent: print(Config.text_rot_1_state_a)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_G == e_state:
-            if not self.is_silent: print(Config.text_rot_1_state_b)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_RG == e_state:
-            if not self.is_silent: print(Config.text_rot_1_state_ab)
+    def event_sw_pushed(self):
+        if not self.is_silent: print(Config.text_rot_1_pushed)
+        
         pass
 
-class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
+class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderWithPushSwitchRGBLED):
     def __init__(self, is_silent=True):
         super().__init__(
             Config.pin_id_rot_2_a,
@@ -77,7 +70,8 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
             Config.pin_id_led_2_b,
             self.event_rot_sw_cw,
             self.event_rot_sw_ccw,
-            self.event_rot_sw_pushed
+            self.event_sw_pushed,
+            is_use_event_pushswitch=False
         )
         self.is_silent = is_silent
 
@@ -89,17 +83,8 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
         if not self.is_silent: print(Config.text_rot_2_ccw)
         pass
 
-    def event_rot_sw_pushed(self):
-        e_state = super().get_led_state()
-        # print(f"RotaryEncoderaWithPushSwitchRGBLED_2: event_rot_sw_pushed: {e_state}")
-        if RotaryEncoderaWithPushSwitchRGBLED.LED_State.OFF == e_state:
-            if not self.is_silent: print(Config.text_rot_2_state_off)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_R == e_state:
-            if not self.is_silent: print(Config.text_rot_2_state_a)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_G == e_state:
-            if not self.is_silent: print(Config.text_rot_2_state_b)
-        elif RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_RG == e_state:
-            if not self.is_silent: print(Config.text_rot_2_state_ab)
+    def event_sw_pushed(self):
+        if not self.is_silent: print(Config.text_rot_2_pushed)
         pass
 
 def event_can_received(msg: CAN_MSG):
@@ -109,7 +94,7 @@ def event_can_received(msg: CAN_MSG):
 
 
 def lcd_display_thread(lcd, thread_sleep_sec=0.1):
-    global prev_psw_valid, val_psw2_valid, dir_rot_valid, dir_rot2_valid
+    global prev_psw_valid, val_psw2_valid, dir_rot1_valid, dir_rot2_valid
     global prev_valid_data
     cnt = 0
     try:
@@ -122,7 +107,7 @@ def lcd_display_thread(lcd, thread_sleep_sec=0.1):
                     lcd.print("CAN [---] ------")
                 lcd.setCursor(0, 1)
                 if is_use_rotary_encoder:
-                    lcd.print(f"[{cnt}]sw:{prev_psw_valid},{val_psw2_valid},[{dir_rot_valid}],[{dir_rot2_valid}]")
+                    lcd.print(f"[{cnt}]sw:{prev_psw_valid},{val_psw2_valid},[{dir_rot1_valid}],[{dir_rot2_valid}]")
                 cnt = (cnt + 1) if cnt < 9 else 0
             except Exception as err:
                 print(f"lcd_display_thread error: {err}")
@@ -142,19 +127,97 @@ def print_i2c_can_init_error(err):
         print("- I2C bus number (some boards use bus 0)")
 
 
-def rot_led_init_test():
-    rot_sw1.set_led_state(RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_RGB)
-    rot_sw2.set_led_state(RotaryEncoderaWithPushSwitchRGBLED.LED_State.ON_RGB)
-    time.sleep(0.5)
-    rot_sw1.set_led_state(RotaryEncoderaWithPushSwitchRGBLED.LED_State.OFF)
-    rot_sw2.set_led_state(RotaryEncoderaWithPushSwitchRGBLED.LED_State.OFF)
-    time.sleep(0.5)
+class RotaryEncoderaWithPushSwitchRGBLED_Twin (RotaryEncoderWithPushSwitchRGBLED):
+    def __init__(self, rot_sw1: RotaryEncoderWithPushSwitchRGBLED, rot_sw2: RotaryEncoderWithPushSwitchRGBLED, is_silent=True):
+        self.rot_sw1 = rot_sw1
+        self.rot_sw2 = rot_sw2
+        self.is_silent = is_silent
 
-    
+    def init_test(self):
+        self.rot_sw1.set_led_state(RotaryEncoderWithPushSwitchRGBLED.LED_State.ON_RGB)
+        self.rot_sw2.set_led_state(RotaryEncoderWithPushSwitchRGBLED.LED_State.ON_RGB)
+        time.sleep(0.5)
+        self.rot_sw1.set_led_state(RotaryEncoderWithPushSwitchRGBLED.LED_State.OFF)
+        self.rot_sw2.set_led_state(RotaryEncoderWithPushSwitchRGBLED.LED_State.OFF)
+        time.sleep(0.5)
+        
+    def check_rotary_encoder_with_push_switch_rgb_twin_changed_thread(
+        self, input_data: InputData, thread_sleep_sec=0.1):
+        global prev_dir_rot1_valid, prev_dir_rot2_valid
+        global prev_psw1_valid, prev_psw2_valid
+        
+        val_rot1_a = val_rot1_b = val_rot2_a = val_rot2_b = val_rot1_a_prev = val_rot1_b_prev = val_rot2_a_prev = val_rot2_b_prev = 0
+        prev_sw1_state = prev_sw2_state = self.SwitchState.OFF
+        dir_rot = dir_rot2 = prev_dir_rot1_valid = RotaryEncoder.RotaryEncoderDirection.NONE
+        val_psw1 = val_psw2= prev_psw1_valid = prev_psw2_valid = self.SwitchState.OFF
+        try:
+            while True:
+                with gpio_lock:
+                    val_rot1_a = GPIO.input(Config.pin_id_rot_1_a)
+                    val_rot1_b = GPIO.input(Config.pin_id_rot_1_b)
+                    val_rot2_a = GPIO.input(Config.pin_id_rot_2_a)
+                    val_rot2_b = GPIO.input(Config.pin_id_rot_2_b)
+                    val_psw1 = GPIO.input(Config.pin_id_rot_1_push_sw)  # keep GPIO event detection
+                    val_psw2 = GPIO.input(Config.pin_id_rot_2_push_sw)  # keep GPIO event detection
+
+                # print(f"val_rot1_a: {val_rot1_a}, val_rot1_b: {val_rot1_b}, val_rot2_a: {val_rot2_a}, val_rot2_b: {val_rot2_b}, val_psw1: {val_psw1}, val_psw2: {val_psw2}")
+                dir_rot1 = self.rot_sw1.rotaryencoder.calc_rotary_encoder_direction(
+                    val_rot1_a, val_rot1_b, val_rot1_a_prev, val_rot1_b_prev)
+                dir_rot2 = self.rot_sw2.rotaryencoder.calc_rotary_encoder_direction(
+                    val_rot2_a, val_rot2_b, val_rot2_a_prev, val_rot2_b_prev)
+                sw1_state = self.SwitchState.ON if val_psw1 == 1 else self.SwitchState.OFF
+                sw2_state = self.SwitchState.ON if val_psw2 == 1 else self.SwitchState.OFF
+                
+                input_data.rot_sw1.dir_rot = dir_rot1
+                input_data.rot_sw1.val_rot_a = val_rot1_a
+                input_data.rot_sw1.val_rot_b = val_rot1_b
+                input_data.rot_sw2.dir_rot = dir_rot2
+                input_data.rot_sw2.val_rot_a = val_rot2_a
+                input_data.rot_sw2.val_rot_b = val_rot2_b
+                
+                if dir_rot1 != RotaryEncoder.RotaryEncoderDirection.NONE:
+                    prev_dir_rot1_valid = dir_rot
+                if dir_rot2 != RotaryEncoder.RotaryEncoderDirection.NONE:
+                    prev_dir_rot2_valid = dir_rot2
+                if sw1_state != self.rot_sw1.SwitchState.OFF:
+                    prev_psw1_valid = sw1_state
+                if sw2_state != self.rot_sw2.SwitchState.OFF:
+                    prev_psw2_valid = sw2_state
+                    
+                if RotaryEncoder.RotaryEncoderDirection.CW == dir_rot1:
+                    self.rot_sw1.event_rot_sw_cw()
+                elif RotaryEncoder.RotaryEncoderDirection.CCW == dir_rot1:
+                    self.rot_sw1.event_rot_sw_ccw()
+                if RotaryEncoder.RotaryEncoderDirection.CW == dir_rot2:
+                    self.rot_sw2.event_rot_sw_cw()
+                elif RotaryEncoder.RotaryEncoderDirection.CCW == dir_rot2:
+                    self.rot_sw2.event_rot_sw_ccw()
+                if self.SwitchState.ON == sw1_state and prev_sw1_state == self.SwitchState.OFF:
+                    self.rot_sw1.event_sw_pushed()
+                if self.SwitchState.ON == sw2_state and prev_sw2_state == self.SwitchState.OFF:
+                    self.rot_sw2.event_sw_pushed()
+                    
+                val_rot1_a_prev = val_rot1_a
+                val_rot1_b_prev = val_rot1_b
+                val_rot2_a_prev = val_rot2_a
+                val_rot2_b_prev = val_rot2_b
+                prev_sw1_state = sw1_state
+                prev_sw2_state = sw2_state
+
+                if thread_sleep_sec > 0:
+                    time.sleep(thread_sleep_sec)
+
+        except KeyboardInterrupt:
+            pass
+        
+        
 def main():
-    global rot_sw1, rot_sw2
+    global rot_sw1, rot_sw2, twin
     global logfile, lcd, i2c_can
     global is_use_i2c_can
+    global input_data
+    
+    input_data = InputData()
     
     if is_use_usb_storage:
         # path_to_usb にログを書き込む
@@ -190,7 +253,7 @@ def main():
     # serial = MySerial(serial_received).start()
         rot_sw1 = RotaryEncoderWithPushSwitchRGBLED_1(is_silent=False)
         rot_sw2 = RotaryEncoderaWithPushSwitchRGBLED_2(is_silent=False)
-        rot_led_init_test()
+        twin = RotaryEncoderaWithPushSwitchRGBLED_Twin(rot_sw1, rot_sw2, is_silent=False)
     
     try:
         if not is_silent: print("please input Ctrl-C and wait few seconds to terminalte this program.")
@@ -198,34 +261,13 @@ def main():
         
         # create thread for rotary encoders (daemon: run in background, do not join)
         if is_use_rotary_encoder:
-            thread_rotary_encoder1 = threading.Thread(
-                target=rot_sw1.rotaryencoder.chech_rotary_encoder_changed_thread,
-                args=(InputData.rot_sw1, Config.pin_id_rot_1_a, Config.pin_id_rot_1_b),
+            thread_twin = threading.Thread(
+                target=twin.check_rotary_encoder_with_push_switch_rgb_twin_changed_thread,
+                args=(input_data, 0),
                 daemon=True,
                 name="rotary_encoder_1",
             )
-            thread_rotary_encoder1.start()
-            thread_rotary_encoder2 = threading.Thread(
-                target=rot_sw2.rotaryencoder.chech_rotary_encoder_changed_thread,
-                args=(InputData.rot_sw2, Config.pin_id_rot_2_a, Config.pin_id_rot_2_b),
-                daemon=True,
-                name="rotary_encoder_2",
-            )
-            thread_rotary_encoder2.start()
-            thread_push_switch1 = threading.Thread(
-                target=rot_sw1.pushswitch.chech_push_switch_changed_thread,
-                args=(InputData.rot_sw1, Config.pin_id_rot_1_push_sw, 0.1),
-                daemon=True,
-                name="push_switch_1",
-            )
-            thread_push_switch1.start()
-            thread_push_switch2 = threading.Thread(
-                target=rot_sw2.pushswitch.chech_push_switch_changed_thread,
-                args=(InputData.rot_sw2, Config.pin_id_rot_2_push_sw, 0.1),
-                daemon=True,
-                name="push_switch_2",
-            )
-            thread_push_switch2.start()
+            thread_twin.start()
         
         # create thread for I2C-CAN
         if is_use_i2c_can:

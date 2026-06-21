@@ -103,7 +103,7 @@ class RotaryEncoder(Switch):
     
 
 class PushSwitch(Switch):
-    def __init__(self, pin_id_sw: int, event_sw_pushed, bouncetime=100, pull_up_down=GPIO.PUD_UP, edge=GPIO.FALLING):
+    def __init__(self, pin_id_sw: int, event_sw_pushed, is_use_event=True, bouncetime=100, pull_up_down=GPIO.PUD_UP, edge=GPIO.FALLING):
         # initialize GPIO pins
         self.pin_id_rot_sw = pin_id_sw
         self.event_sw_pushed = event_sw_pushed
@@ -112,13 +112,13 @@ class PushSwitch(Switch):
         
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(pin_id_sw, GPIO.IN, pull_up_down=pull_up_down)
-        GPIO.add_event_detect(pin_id_sw, edge,
-                              callback=self._event_callback_pushsw, bouncetime=bouncetime)
+        if is_use_event:
+            GPIO.add_event_detect(pin_id_sw, edge,
+                                  callback=self._event_callback_pushsw, bouncetime=bouncetime)
 
     def _event_callback_pushsw(self, gpio_pin):
         if self.pin_id_rot_sw == gpio_pin:
-            with gpio_lock:
-                is_pushed = (0 == GPIO.input(self.pin_id_rot_sw))
+            is_pushed = (0 == GPIO.input(self.pin_id_rot_sw))
             if not is_pushed:
                 # print("rot sw pushed. pin: " , str(self.pin_id_rot_sw))
                 self.event_sw_pushed()
@@ -143,8 +143,8 @@ class PushSwitch(Switch):
 
 
     def chech_push_switch_changed_thread_process(self, pin_id_sw: int, prev_swith_state: Switch.SwitchState) -> Switch.SwitchState:
-        with gpio_lock:
-            val_psw = GPIO.input(pin_id_sw)  # keep GPIO event detection
+
+        val_psw = GPIO.input(pin_id_sw)  # keep GPIO event detection
         switch_state = Switch.SwitchState.ON if val_psw == 0 else Switch.SwitchState.OFF
         if Switch.SwitchState.ON == switch_state and prev_swith_state == Switch.SwitchState.OFF:
             self.event_sw_pushed()
@@ -156,8 +156,8 @@ class PushSwitchWithLED(PushSwitch):
         OFF = 1
         ON = 2
 
-    def __init__(self, pin_id_sw: int, pin_id_led: int, event_sw_pushed,  bouncetime=100, active_high=True, pull_up_down=GPIO.PUD_UP):
-        super().__init__(pin_id_sw, event_sw_pushed, bouncetime, pull_up_down)
+    def __init__(self, pin_id_sw: int, pin_id_led: int, event_sw_pushed, is_use_event=True,  bouncetime=100, active_high=True, pull_up_down=GPIO.PUD_UP):
+        super().__init__(pin_id_sw, event_sw_pushed, is_use_event, bouncetime, pull_up_down)
         self.e_state = self.State.OFF
         self.event_sw_pushed = event_sw_pushed
         self.led = LED(pin_id_led, initial_value=False, active_high=active_high)
@@ -177,11 +177,11 @@ class PushSwitchWithLED(PushSwitch):
 
 
 class RotaryEncoderaWithPushSwitch(RotaryEncoder, PushSwitch): 
-    def __init__(self, pin_id_rot_a: int, pin_id_rot_b: int, pin_id_rot_sw: int, event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, pull_up_down=GPIO.PUD_UP, edge=GPIO.FALLING):
+    def __init__(self, pin_id_rot_a: int, pin_id_rot_b: int, pin_id_rot_sw: int, event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, is_use_event_pushswitch=True, pull_up_down=GPIO.PUD_UP, edge=GPIO.FALLING):
         self.rotaryencoder = RotaryEncoder(
             pin_id_rot_a, pin_id_rot_b, event_rot_sw_cw, event_rot_sw_ccw)
         self.pushswitch = PushSwitch(
-            pin_id_rot_sw, event_rot_sw_pushed, pull_up_down=pull_up_down, edge=edge)
+            pin_id_rot_sw, event_rot_sw_pushed, is_use_event_pushswitch, pull_up_down=pull_up_down, edge=edge)
         
     class RotaryEncoderWithPushSwitchData(RotaryEncoder.RotaryEncoderData, Switch.SwitchData):
         def __init__(self):
@@ -219,9 +219,9 @@ class RotaryEncoderaWithPushSwitch2CLED(RotaryEncoderaWithPushSwitch):
         ON_AB = 4
 
     def __init__(self, pin_id_rot_a: int, pin_id_rot_b: int, pin_id_rot_sw: int, pin_id_led_1: int, pin_id_led_2: int,
-                 event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, active_high=True, pull_up_down=GPIO.PUD_UP
+                 event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, is_use_event_pushswitch=True, active_high=True, pull_up_down=GPIO.PUD_UP
                  ):
-        super().__init__(pin_id_rot_a, pin_id_rot_b, pin_id_rot_sw, event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed)
+        super().__init__(pin_id_rot_a, pin_id_rot_b, pin_id_rot_sw, event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, is_use_event_pushswitch)
         self.e_led_state = self.LED_State.OFF
         self.pin_id_led_1 = pin_id_led_1
         self.pin_id_led_2 = pin_id_led_2
@@ -254,7 +254,7 @@ class RotaryEncoderaWithPushSwitch2CLED(RotaryEncoderaWithPushSwitch):
         return self.e_led_state
 
 
-class RotaryEncoderaWithPushSwitchRGBLED(RotaryEncoderaWithPushSwitch):
+class RotaryEncoderWithPushSwitchRGBLED(RotaryEncoderaWithPushSwitch):
     class LED_State (IntEnum):
         OFF = 0b0000
         ON_R = 0b0001
@@ -267,12 +267,12 @@ class RotaryEncoderaWithPushSwitchRGBLED(RotaryEncoderaWithPushSwitch):
         
 
     def __init__(self, pin_id_rot_a: int, pin_id_rot_b: int, pin_id_rot_sw: int, pin_id_led_r: int, pin_id_led_g: int, pin_id_led_b: int,
-                 event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, led_active_high=False, sw_pull_up_down=GPIO.PUD_DOWN, sw_edge=GPIO.RISING
+                 event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, is_use_event_pushswitch=True, led_active_high=False, sw_pull_up_down=GPIO.PUD_DOWN, sw_edge=GPIO.RISING
                  ):
         super().__init__(
             pin_id_rot_a, pin_id_rot_b, pin_id_rot_sw,
             event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed,
-            pull_up_down=sw_pull_up_down, edge=sw_edge)
+            is_use_event_pushswitch, pull_up_down=sw_pull_up_down, edge=sw_edge)
         self.e_led_state = self.LED_State.OFF
         self.pin_id_led_r = pin_id_led_r
         self.pin_id_led_g = pin_id_led_g
