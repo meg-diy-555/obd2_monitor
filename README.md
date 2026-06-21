@@ -11,7 +11,7 @@ python main.py
 ## I2C 診断（CAN が i2cdetect に出ない場合）
 
 ```bash
-python i2c_scan.py
+python lib/i2c_scan.py
 # または
 sudo i2cdetect -y 0
 sudo i2cdetect -y 1
@@ -33,7 +33,7 @@ sudo i2cdetect -y 1
 ### CAN 受信テスト（Pi のみ）
 
 ```bash
-python i2c_can_test.py
+python lib/i2c_can_test.py
 ```
 
 USB-CAN から 500kbps で送信。`filter=obd` のとき 0x7E8 以外は **ハードウェアで破棄**される。

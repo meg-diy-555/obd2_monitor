@@ -11,10 +11,19 @@
       "justMyCode": true
     },
     {
-      "name": "Python: i2c_scan.py",
+      "name": "Python: lib/i2c_scan.py",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/i2c_scan.py",
+      "program": "${workspaceFolder}/lib/i2c_scan.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: lib/i2c_can_test.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/lib/i2c_can_test.py",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true
