@@ -108,7 +108,7 @@ def event_can_received(msg: CAN_MSG):
         print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
 
 
-def lcd_display_thread(lcd):
+def lcd_display_thread(lcd, thread_sleep_sec=0.1):
     global prev_psw_valid, val_psw2_valid, dir_rot_valid, dir_rot2_valid
     global prev_valid_data
     cnt = 0
@@ -124,10 +124,9 @@ def lcd_display_thread(lcd):
                 if is_use_rotary_encoder:
                     lcd.print(f"[{cnt}]sw:{prev_psw_valid},{val_psw2_valid},[{dir_rot_valid}],[{dir_rot2_valid}]")
                 cnt = (cnt + 1) if cnt < 9 else 0
-                time.sleep(1)
             except Exception as err:
                 print(f"lcd_display_thread error: {err}")
-                time.sleep(1)
+            time.sleep(0.1)
     except KeyboardInterrupt:
         pass
 
@@ -199,20 +198,34 @@ def main():
         
         # create thread for rotary encoders (daemon: run in background, do not join)
         if is_use_rotary_encoder:
-            thread_rotary_encoder = threading.Thread(
-                target=rot_sw1.check_rotary_encoder_with_push_switch_changed_thread,
-                args=(InputData.rot_sw1, Config.pin_id_rot_1_a, Config.pin_id_rot_1_b, Config.pin_id_rot_1_push_sw),
+            thread_rotary_encoder1 = threading.Thread(
+                target=rot_sw1.rotaryencoder.chech_rotary_encoder_changed_thread,
+                args=(InputData.rot_sw1, Config.pin_id_rot_1_a, Config.pin_id_rot_1_b),
                 daemon=True,
                 name="rotary_encoder_1",
             )
-            thread_rotary_encoder.start()
-            thread_rotary_encoder = threading.Thread(
-                target=rot_sw2.check_rotary_encoder_with_push_switch_changed_thread,
-                args=(InputData.rot_sw2, Config.pin_id_rot_2_a, Config.pin_id_rot_2_b, Config.pin_id_rot_2_push_sw),
+            thread_rotary_encoder1.start()
+            thread_rotary_encoder2 = threading.Thread(
+                target=rot_sw2.rotaryencoder.chech_rotary_encoder_changed_thread,
+                args=(InputData.rot_sw2, Config.pin_id_rot_2_a, Config.pin_id_rot_2_b),
                 daemon=True,
                 name="rotary_encoder_2",
             )
-            thread_rotary_encoder.start()
+            thread_rotary_encoder2.start()
+            thread_push_switch1 = threading.Thread(
+                target=rot_sw1.pushswitch.chech_push_switch_changed_thread,
+                args=(InputData.rot_sw1, Config.pin_id_rot_1_push_sw, 0.1),
+                daemon=True,
+                name="push_switch_1",
+            )
+            thread_push_switch1.start()
+            thread_push_switch2 = threading.Thread(
+                target=rot_sw2.pushswitch.chech_push_switch_changed_thread,
+                args=(InputData.rot_sw2, Config.pin_id_rot_2_push_sw, 0.1),
+                daemon=True,
+                name="push_switch_2",
+            )
+            thread_push_switch2.start()
         
         # create thread for I2C-CAN
         if is_use_i2c_can:
@@ -227,7 +240,7 @@ def main():
         if is_use_lcd:
             thread_lcd = threading.Thread(
                 target=lcd_display_thread,
-                args=(lcd,),
+                args=(lcd, 1),
                 daemon=True,
                 name="lcd",
             )

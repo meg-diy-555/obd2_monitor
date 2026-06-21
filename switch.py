@@ -126,16 +126,18 @@ class PushSwitch(Switch):
     def __delete__(self):
         # release evets and GPIO pins
         GPIO.setmode(GPIO.BCM)
-        GPIO.remove_event_detect(self.pin_id_sw)
-        GPIO.cleanup(self.pin_id_sw)
+        GPIO.remove_event_detect(self.pin_id_rot_sw)
+        GPIO.cleanup(self.pin_id_rot_sw)
 
-    def chech_push_switch_changed_thread(self, input_data: Switch.SwitchData, pin_id_sw: int):
+    def chech_push_switch_changed_thread(self, input_data: Switch.SwitchData, pin_id_sw: int, thread_sleep_sec=0.01):
+        val_psw = getattr(input_data, 'val_psw', Switch.SwitchState.OFF)
         try:
             while True:
                 val_psw = input_data.val_psw = self.chech_push_switch_changed_thread_process(pin_id_sw, val_psw)
                 if val_psw != Switch.SwitchState.OFF:
                     self.prev_psw_valid = val_psw
-                time.sleep(0.01)
+                if thread_sleep_sec > 0:
+                    time.sleep(thread_sleep_sec)
         except KeyboardInterrupt:
             pass
 
@@ -174,7 +176,7 @@ class PushSwitchWithLED(PushSwitch):
         GPIO.cleanup(self.pin_id_sw)
 
 
-class RotaryEncoderaWithPushSwitch(Switch): 
+class RotaryEncoderaWithPushSwitch(RotaryEncoder, PushSwitch): 
     def __init__(self, pin_id_rot_a: int, pin_id_rot_b: int, pin_id_rot_sw: int, event_rot_sw_cw, event_rot_sw_ccw, event_rot_sw_pushed, pull_up_down=GPIO.PUD_UP, edge=GPIO.FALLING):
         self.rotaryencoder = RotaryEncoder(
             pin_id_rot_a, pin_id_rot_b, event_rot_sw_cw, event_rot_sw_ccw)
