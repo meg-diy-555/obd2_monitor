@@ -102,10 +102,10 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderaWithPushSwitchRGBLED):
             if not self.is_silent: print(Config.text_rot_2_state_ab)
         pass
 
-def event_can_received(msg : str):
-    global rot_sw1, rot_sw2
-    if not is_silent: print(msg)
-    pass
+def event_can_received(msg: CAN_MSG):
+    global prev_valid_data
+    if not is_silent:
+        print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
 
 
 def lcd_display_thread(lcd):
@@ -176,7 +176,13 @@ def main():
                 is_silent,
             )
             i2c_can.begin(Config.I2C_CAN_BAUD)
+            if Config.I2C_CAN_FILTER_MODE == "obd":
+                i2c_can.init_obd_filters()
+            elif Config.I2C_CAN_FILTER_MODE == "all":
+                i2c_can.init_accept_all_filters()
             time.sleep(0.05)
+            if not is_silent:
+                print(f"I2C-CAN ready: ch={Config.I2C_CAN_CH}, addr=0x{Config.I2C_CAN_ADDR:02X}, filter={Config.I2C_CAN_FILTER_MODE}")
         except OSError as err:
             print_i2c_can_init_error(err)
             is_use_i2c_can = False

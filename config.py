@@ -33,6 +33,7 @@ class Config:
     I2C_CAN_CH = 1
     I2C_CAN_ADDR = 0x25
     I2C_CAN_BAUD = I2C_CAN.I2C_CAN_BAUD.CAN_500KBPS.value
+    I2C_CAN_FILTER_MODE = "none"  # "none": Arduino同様デフォルト / "all": 全ID / "obd": 0x7E8のみ
     I2C_INIT_RETRY_COUNT = 5
     I2C_INIT_RETRY_WAIT_SEC = 0.5
 

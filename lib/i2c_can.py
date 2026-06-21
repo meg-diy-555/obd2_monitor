@@ -20,13 +20,14 @@ class CAN_MSG:
     
     
     def is_valid_can_msg(self) -> bool:
-        return isinstance(self, CAN_MSG) and self.length > 0 and self.length <= 8
+        return isinstance(self, CAN_MSG) and 0 <= self.length <= 8
 
 class I2C_CAN:
     
     DEFAULT_I2C_ADDR    = 0X25
     DEFAULT_RETRY_COUNT = 3
     DEFAULT_RETRY_WAIT_SEC = 0.05
+    DNUM_MAX = 16  # module buffer size (Longan datasheet)
 
     def __init__(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR, event_can_received=None, is_silent=True):
         """Initialize the I2C_CAN class.
@@ -44,6 +45,7 @@ class I2C_CAN:
         self.read_settle_sec = float(os.getenv("I2C_CAN_READ_SETTLE_SEC", "0.02"))
         self.event_can_received = event_can_received
         self.is_silent = is_silent
+        self.last_recv_raw = None
     
     def init_i2c_can(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR, is_silent=True):
         """Initialize I2C-CAN module with retry."""
@@ -73,21 +75,20 @@ class I2C_CAN:
         try:
             while True:
                 try:
-                    size = self.check_receive()  # Read the size of stored frames
-                    if size > 0:
+                    while True:
+                        size = self.check_receive()
+                        if size <= 0:
+                            break
                         msg = self.read_can()
                         if msg is not None and msg.is_valid_can_msg():
                             data = msg
                             prev_valid_data = msg
-                            # if is_use_usb_storage and logfile:
-                            #     logfile.write(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}\n")
-                            self.event_can_received(msg)
-                            if not is_silent:
+                            if self.event_can_received:
+                                self.event_can_received(msg)
+                            elif not is_silent:
                                 print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
-                        else:
-                            data = None
-                    else:
-                        data = None
+                        elif self.debug_i2c:
+                            print(f"I2C_CAN debug: DNUM={size}, read failed or invalid frame")
                     i2c_error_count = 0
                 except OSError as err:
                     i2c_error_count += 1
@@ -99,19 +100,36 @@ class I2C_CAN:
                     data = None
                     if not is_silent:
                         print(f"check_i2c_can_thread error: {err}")
-                # time.sleep(0.01)
+                time.sleep(0.01)
         except KeyboardInterrupt:
             pass
         
     def begin(self, speedset) -> None:
-        """Initialize the I2C CAN module with the specified speed.
-        Args:
-            speedset (I2C_CAN_BAUD): Speed setting for the CAN module.
-        Returns:
-            None
-        """
+        """Initialize CAN baud rate (Seeed/Longan I2C-CAN module)."""
         self.__set_reg(self.I2C_CAN_REG.REG_BAUD, [speedset])
-        time.sleep(0.010)
+        time.sleep(0.1)
+        # DNUM 読み取りで I2C 通信を確認（BAUD 読み戻しは 0 になることがあるため使わない）
+        self.__get_reg(self.I2C_CAN_REG.REG_DNUM, 1)
+        if self.debug_i2c:
+            try:
+                baud = self.__get_reg(self.I2C_CAN_REG.REG_BAUD, 1)[0]
+                print(f"I2C_CAN debug: baud readback={baud}, wrote={speedset}")
+            except OSError as err:
+                print(f"I2C_CAN debug: baud readback failed: {err}")
+
+    def init_obd_filters(self) -> None:
+        """Configure MCP2515 filters for OBD-II ECU responses (ID 0x7E8-0x7EF)."""
+        self.init_Mask(0, 0, 0x7FC)
+        self.init_Mask(1, 0, 0x7FC)
+        for num in range(6):
+            self.init_Filt(num, 0, 0x7E8)
+
+    def init_accept_all_filters(self) -> None:
+        """Accept all standard 11-bit CAN IDs (mask=0: all bits don't care)."""
+        self.init_Mask(0, 0, 0)
+        self.init_Mask(1, 0, 0)
+        for num in range(6):
+            self.init_Filt(num, 0, 0)
         
     def __set_reg(self, reg, data: list) -> None:
         """Write data to a specific register of the I2C CAN module.
@@ -122,74 +140,51 @@ class I2C_CAN:
             None
         """
         data = bytearray(data)
-        self.smbus.write_i2c_block_data(self.i2c_can_address, reg.value, data)
+        if len(data) == 1:
+            self.smbus.write_byte_data(self.i2c_can_address, reg.value, data[0])
+        else:
+            self.smbus.write_i2c_block_data(self.i2c_can_address, reg.value, data)
         
-    def __get_reg(self, reg, len:int) -> int:
-        """Read data from a specific register of the I2C CAN module.
-        Args:
-            reg (I2C_CAN_REG): The register to read from.
-            len (int): Number of bytes to read.
-        Returns:
-            list: List of data bytes read from the register.
-        """
+    def __read_reg_bytes(self, reg, length: int) -> list:
+        """Write register pointer, then read bytes in one I2C transaction (Wire.requestFrom)."""
         last_error = None
-        debug_errors = []
         for attempt in range(self.DEFAULT_RETRY_COUNT):
-            # Strategy 0: SMBus byte-data read (often most compatible for 1-byte status regs)
-            if len == 1:
-                try:
-                    return [self.smbus.read_byte_data(self.i2c_can_address, reg.value)]
-                except OSError as err0:
-                    last_error = err0
-                    if self.debug_i2c:
-                        debug_errors.append(f"byte-data:{err0}")
-
-            # Strategy 1: repeated-start (write reg + read data)
-            try:
-                write_msg = smbus2.i2c_msg.write(self.i2c_can_address, [reg.value])
-                read_msg = smbus2.i2c_msg.read(self.i2c_can_address, len)
-                self.smbus.i2c_rdwr(write_msg, read_msg)
-                return list(read_msg)
-            except OSError as err1:
-                last_error = err1
-                if self.debug_i2c:
-                    debug_errors.append(f"rs:{err1}")
-
-            # Strategy 2: stop-separated write/read
+            # Primary: write reg (stop) → single read transaction (Arduino IIC_CAN_GetReg)
             try:
                 self.smbus.write_byte(self.i2c_can_address, reg.value)
                 time.sleep(self.read_settle_sec)
-                if len == 1:
-                    data = [self.smbus.read_byte(self.i2c_can_address)]
-                else:
-                    data = []
-                    for _ in range(len):
-                        data.append(self.smbus.read_byte(self.i2c_can_address))
-                return data
-            except OSError as err2:
-                last_error = err2
-                if self.debug_i2c:
-                    debug_errors.append(f"stop:{err2}")
+                read_msg = smbus2.i2c_msg.read(self.i2c_can_address, length)
+                self.smbus.i2c_rdwr(read_msg)
+                return list(read_msg)
+            except OSError as err:
+                last_error = err
 
-            # Strategy 3: SMBus command read
+            # Fallback: repeated-start write reg + read
             try:
-                data = self.smbus.read_i2c_block_data(self.i2c_can_address, reg.value, len)
-                return data
-            except OSError as err3:
-                last_error = err3
-                if self.debug_i2c:
-                    debug_errors.append(f"cmd:{err3}")
+                write_msg = smbus2.i2c_msg.write(self.i2c_can_address, [reg.value])
+                read_msg = smbus2.i2c_msg.read(self.i2c_can_address, length)
+                self.smbus.i2c_rdwr(write_msg, read_msg)
+                return list(read_msg)
+            except OSError as err:
+                last_error = err
+
+            # Fallback: SMBus block read
+            try:
+                return self.smbus.read_i2c_block_data(self.i2c_can_address, reg.value, length)
+            except OSError as err:
+                last_error = err
                 if attempt < self.DEFAULT_RETRY_COUNT - 1:
                     time.sleep(self.DEFAULT_RETRY_WAIT_SEC)
 
-        if self.debug_i2c:
-            self._debug_fail_count += 1
-            if self._debug_fail_count <= 3 or self._debug_fail_count % 10 == 0:
-                print(
-                    f"I2C_CAN debug fail #{self._debug_fail_count} "
-                    f"reg=0x{reg.value:02X} len={len} details={'; '.join(debug_errors)}"
-                )
         raise last_error
+
+    def __get_reg(self, reg, len:int) -> list:
+        """Read register (Longan/Seeed I2C-CAN)."""
+        return self.__read_reg_bytes(reg, len)
+
+    def __read_recv_reg(self) -> list:
+        """Read 16-byte RECV register."""
+        return self.__read_reg_bytes(self.I2C_CAN_REG.REG_RECV, 16)
         
     def send_can(self, id:int, ext:int, len:int, data:list) -> None:
         """Send CAN message to the I2C CAN module.
@@ -207,10 +202,12 @@ class I2C_CAN:
             0xff & (id >> 8),
             0xff & (id >> 0),
             ext,
-            0, #rtr
-            len
+            0,  # rtr
+            len,
         ]
-        buff = buff+data
+        buff.extend(data[:len])
+        while len(buff) < 15:
+            buff.append(0)
         buff.append(self.__makeCheckSum(buff))
         self.__set_reg(self.I2C_CAN_REG.REG_SEND, buff)
         
@@ -230,20 +227,33 @@ class I2C_CAN:
         sum  = sum & 0xff
         return sum
     
+    def read_can_raw(self) -> list:
+        """Read raw 16-byte RECV buffer (for debug)."""
+        return self.__read_recv_reg()
+
     def read_can(self) -> CAN_MSG | None:
         """Read a CAN message from the I2C CAN module.
         Returns:
             CAN_MSG: An instance of the CAN_MSG class containing the received message.
             None: If checksum is invalid or length is invalid.
         """
-        data = self.__get_reg(self.I2C_CAN_REG.REG_RECV, 16)
+        data = self.__read_recv_reg()
+        self.last_recv_raw = data
+        if all(b == 0 for b in data):
+            return None
+        # I2C 誤読時の 0xFF パディングを除外
+        if len(data) == 16 and data[1] == 0xFF and all(b == 0xFF for b in data[1:]):
+            return None
+
         id = 0
         
-        print(f"read_can: {data}")  
+        if self.debug_i2c:
+            print(f"read_can: {data}")
         
         checksum = self.__makeCheckSum(data[:-1])
         if checksum != data[-1]:
-            print("Checksum error")
+            if self.debug_i2c:
+                print(f"Checksum error: raw={data}, calc=0x{checksum:02X}, got=0x{data[-1]:02X}")
             return None
         id += data[0]
         id <<= 8
@@ -257,61 +267,61 @@ class I2C_CAN:
         rtr = data[5]
         length = data[6]
         if length < 0 or length > 8:
-            print("Invalid length")
+            if self.debug_i2c:
+                print("Invalid length")
             return None
         data = data[7:7+length]
         return CAN_MSG(id, ext, length, data)
     
 
     def check_receive(self) -> int:
-        """Read the size of stored CAN frames in the I2C CAN module.
-        Returns:
-            int: The number of stored CAN frames.
-        """
-        """Read the size of stored CAN frames in the I2C CAN module.
-        Returns:
-            int: The number of stored CAN frames.
-        """
-        data = self.__get_reg(self.I2C_CAN_REG.REG_DNUM, 1)
-        return data[0]
+        """Read the number of buffered CAN frames (0-16)."""
+        for attempt in range(self.DEFAULT_RETRY_COUNT):
+            try:
+                count = self.__read_reg_bytes(self.I2C_CAN_REG.REG_DNUM, 1)[0]
+            except OSError as err:
+                if self.debug_i2c:
+                    print(f"I2C_CAN debug: DNUM read error: {err}")
+                time.sleep(self.read_settle_sec)
+                continue
+            if 0 <= count <= self.DNUM_MAX:
+                return count
+            if self.debug_i2c:
+                print(f"I2C_CAN debug: invalid DNUM={count}, retry {attempt + 1}")
+            time.sleep(self.read_settle_sec)
+        return 0
     
     def init_Mask(self, num: int, ext: int, ulData: int):
-        """Initialize a CAN mask in the I2C CAN module.
-        Args:
-            num (int): Mask number (0 or 1).
-            ext (int): 0 for standard CAN ID, 1 for extended CAN ID.
-            ulData (int): The mask value (0-0xFFFFFFFF).
-        Returns:
-            None
-        """
-        dta = []        
-        dta[0] = ext
-        dta[1] = 0xff & (ulData >> 24)
-        dta[2] = 0xff & (ulData >> 16)
-        dta[3] = 0xff & (ulData >> 8)
-        dta[4] = 0xff & (ulData >> 0)
-        mask = self.I2C_CAN_REG.REG_MASK0 if (num == 0) else  self.I2C_CAN_REG.REG_MASK1
+        dta = [
+            ext,
+            0xff & (ulData >> 24),
+            0xff & (ulData >> 16),
+            0xff & (ulData >> 8),
+            0xff & (ulData >> 0),
+        ]
+        mask = self.I2C_CAN_REG.REG_MASK0 if num == 0 else self.I2C_CAN_REG.REG_MASK1
         self.__set_reg(mask, dta)
         time.sleep(0.050)
 
-
     def init_Filt(self, num: int, ext: int, ulData: int):
-        """Initialize a CAN filter in the I2C CAN module.
-        Args:
-            num (int): Filter number (0-5).
-            ext (int): 0 for standard CAN ID, 1 for extended CAN ID.
-            ulData (int): The filter value (0-0xFFFFFFFF).
-        Returns:
-            None
-        """
-        dta = []
-        dta[0] = ext
-        dta[1] = 0xff & (ulData >> 24)
-        dta[2] = 0xff & (ulData >> 16)
-        dta[3] = 0xff & (ulData >> 8)
-        dta[4] = 0xff & (ulData >> 0)        
-        filt = (7+num)*0x10
-        self.__set_reg(filt, dta)
+        dta = [
+            ext,
+            0xff & (ulData >> 24),
+            0xff & (ulData >> 16),
+            0xff & (ulData >> 8),
+            0xff & (ulData >> 0),
+        ]
+        filt_regs = (
+            self.I2C_CAN_REG.REG_FILT0,
+            self.I2C_CAN_REG.REG_FILT1,
+            self.I2C_CAN_REG.REG_FILT2,
+            self.I2C_CAN_REG.REG_FILT3,
+            self.I2C_CAN_REG.REG_FILT4,
+            self.I2C_CAN_REG.REG_FILT5,
+        )
+        if num < 0 or num >= len(filt_regs):
+            raise ValueError(f"filter num must be 0-5, got {num}")
+        self.__set_reg(filt_regs[num], dta)
         time.sleep(0.050)
 
 
