@@ -18,12 +18,12 @@ is_use_i2c_can = True
 is_use_lcd = True
 is_use_usb_storage = True
 
-prev_psw_valid = 0
-val_psw2_valid = 0
-dir_rot1_valid = 0
-dir_rot2_valid = 0
-data = None
-prev_valid_data = None
+# prev_psw_valid = 0
+# val_psw2_valid = 0
+# dir_rot1_valid = 0
+# dir_rot2_valid = 0
+# data = None
+# prev_valid_data = None
 
 
 class InputData:
@@ -59,6 +59,13 @@ class RotaryEncoderWithPushSwitchRGBLED_1 (RotaryEncoderWithPushSwitchRGBLED):
         
         pass
 
+def event_can_received(msg: CAN_MSG):
+    # global prev_valid_data
+    global msg_valid
+    msg_valid = msg
+    if not is_silent:
+        print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
+
 class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderWithPushSwitchRGBLED):
     def __init__(self, is_silent=True):
         super().__init__(
@@ -87,44 +94,6 @@ class RotaryEncoderaWithPushSwitchRGBLED_2 (RotaryEncoderWithPushSwitchRGBLED):
         if not self.is_silent: print(Config.text_rot_2_pushed)
         pass
 
-def event_can_received(msg: CAN_MSG):
-    global prev_valid_data
-    if not is_silent:
-        print(f"CAN [{msg.id:03X}] {msg.data_to_hex_str()}")
-
-
-def lcd_display_thread(lcd, thread_sleep_sec=0.1):
-    global prev_psw_valid, val_psw2_valid, dir_rot1_valid, dir_rot2_valid
-    global prev_valid_data
-    cnt = 0
-    try:
-        while True:
-            try:
-                lcd.home()
-                if prev_valid_data:
-                    lcd.print(f"CAN [{prev_valid_data.id:03X}] {prev_valid_data.data_to_hex_str()}")
-                else:   
-                    lcd.print("CAN [---] ------")
-                lcd.setCursor(0, 1)
-                if is_use_rotary_encoder:
-                    lcd.print(f"[{cnt}]sw:{prev_psw_valid},{val_psw2_valid},[{dir_rot1_valid}],[{dir_rot2_valid}]")
-                cnt = (cnt + 1) if cnt < 9 else 0
-            except Exception as err:
-                print(f"lcd_display_thread error: {err}")
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-
-
-def print_i2c_can_init_error(err):
-    if not is_silent:
-        print("I2C-CAN module initialization failed.")
-        print(f"Last error: {err}")
-        print("Check:")
-        print("- I2C is enabled: sudo raspi-config -> Interface Options -> I2C")
-        print("- Wiring (SDA/SCL/GND/3.3V) and pull-up resistors")
-        print("- Device address: run 'i2cdetect -y 1' and confirm 0x25")
-        print("- I2C bus number (some boards use bus 0)")
 
 
 class RotaryEncoderaWithPushSwitchRGBLED_Twin (RotaryEncoderWithPushSwitchRGBLED):
@@ -143,13 +112,13 @@ class RotaryEncoderaWithPushSwitchRGBLED_Twin (RotaryEncoderWithPushSwitchRGBLED
         
     def check_rotary_encoder_with_push_switch_rgb_twin_changed_thread(
         self, input_data: InputData, thread_sleep_sec=0.1):
-        global prev_dir_rot1_valid, prev_dir_rot2_valid
-        global prev_psw1_valid, prev_psw2_valid
+        # global prev_dir_rot1_valid, prev_dir_rot2_valid
+        # global prev_psw1_valid, prev_psw2_valid
         
         val_rot1_a = val_rot1_b = val_rot2_a = val_rot2_b = val_rot1_a_prev = val_rot1_b_prev = val_rot2_a_prev = val_rot2_b_prev = 0
         prev_sw1_state = prev_sw2_state = self.SwitchState.OFF
-        dir_rot = dir_rot2 = prev_dir_rot1_valid = RotaryEncoder.RotaryEncoderDirection.NONE
-        val_psw1 = val_psw2= prev_psw1_valid = prev_psw2_valid = self.SwitchState.OFF
+        dir_rot1 = dir_rot2 = self.prev_dir_rot1_valid = self.prev_dir_rot2_valid = RotaryEncoder.RotaryEncoderDirection.NONE
+        val_psw1 = val_psw2= self.prev_psw1_valid = self.prev_psw2_valid = self.SwitchState.OFF
         try:
             while True:
                 with gpio_lock:
@@ -176,13 +145,13 @@ class RotaryEncoderaWithPushSwitchRGBLED_Twin (RotaryEncoderWithPushSwitchRGBLED
                 input_data.rot_sw2.val_rot_b = val_rot2_b
                 
                 if dir_rot1 != RotaryEncoder.RotaryEncoderDirection.NONE:
-                    prev_dir_rot1_valid = dir_rot
+                    self.prev_dir_rot1_valid = dir_rot1
                 if dir_rot2 != RotaryEncoder.RotaryEncoderDirection.NONE:
-                    prev_dir_rot2_valid = dir_rot2
+                    self.prev_dir_rot2_valid = dir_rot2
                 if sw1_state != self.rot_sw1.SwitchState.OFF:
-                    prev_psw1_valid = sw1_state
+                    self.prev_psw1_valid = sw1_state
                 if sw2_state != self.rot_sw2.SwitchState.OFF:
-                    prev_psw2_valid = sw2_state
+                    self.prev_psw2_valid = sw2_state
                     
                 if RotaryEncoder.RotaryEncoderDirection.CW == dir_rot1:
                     self.rot_sw1.event_rot_sw_cw()
@@ -209,7 +178,62 @@ class RotaryEncoderaWithPushSwitchRGBLED_Twin (RotaryEncoderWithPushSwitchRGBLED
 
         except KeyboardInterrupt:
             pass
+    
+    def clear_prev_valid_data(self):
+        self.prev_dir_rot1_valid = RotaryEncoder.RotaryEncoderDirection.NONE
+        self.prev_dir_rot2_valid = RotaryEncoder.RotaryEncoderDirection.NONE
+        self.prev_psw1_valid = self.SwitchState.OFF
+        self.prev_psw2_valid = self.SwitchState.OFF
         
+
+def lcd_display_thread(lcd, i2c_can: I2C_CAN, twin: RotaryEncoderaWithPushSwitchRGBLED_Twin, thread_sleep_sec=0.1):
+    global prev_psw1_valid, prev_psw2_valid, prev_dir_rot1_valid, prev_dir_rot2_valid
+    global msg_valid, msg_valid_prev
+    msg_valid = msg_valid_prev = None
+    cnt = 0
+    lcd_clear_cnt = 0
+    try:
+        while True:
+            try:
+                lcd.home()
+                if msg_valid:
+                    lcd.print(f"{msg_valid.id:03X}|{msg_valid.data_to_hex_str()}")
+                    if not msg_valid_prev:
+                        lcd_clear_cnt = 0
+                    lcd_clear_cnt = (lcd_clear_cnt + 1) if lcd_clear_cnt < 10 else 0
+                if lcd_clear_cnt == 0:
+                    lcd.print("---| -- -- -- -- -- -- -- --")
+                    msg_valid = None
+                msg_valid_prev = msg_valid
+
+                lcd.setCursor(0, 1)
+                if is_use_rotary_encoder:
+                    str_dir_rot1 = ">" if twin.prev_dir_rot1_valid == RotaryEncoder.RotaryEncoderDirection.CW \
+                        else "<" if twin.prev_dir_rot1_valid == RotaryEncoder.RotaryEncoderDirection.CCW else "-"
+                    str_dir_rot2 = ">" if twin.prev_dir_rot2_valid == RotaryEncoder.RotaryEncoderDirection.CW \
+                        else "<" if twin.prev_dir_rot2_valid == RotaryEncoder.RotaryEncoderDirection.CCW else "-"
+                    str_psw1 = "1" if twin.prev_psw1_valid == RotaryEncoderWithPushSwitchRGBLED.SwitchState.ON else "0"
+                    str_psw2 = "1" if twin.prev_psw2_valid == RotaryEncoderWithPushSwitchRGBLED.SwitchState.ON else "0"
+                    lcd.print(f"[{cnt}]sw:{str_psw1}|{str_dir_rot1}|{str_psw2}{str_dir_rot2}|")
+                cnt = (cnt + 1) if cnt < 9 else 0
+                twin.clear_prev_valid_data()
+            except Exception as err:
+                print(f"lcd_display_thread error: {err}")
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass
+
+
+def print_i2c_can_init_error(err):
+    if not is_silent:
+        print("I2C-CAN module initialization failed.")
+        print(f"Last error: {err}")
+        print("Check:")
+        print("- I2C is enabled: sudo raspi-config -> Interface Options -> I2C")
+        print("- Wiring (SDA/SCL/GND/3.3V) and pull-up resistors")
+        print("- Device address: run 'i2cdetect -y 1' and confirm 0x25")
+        print("- I2C bus number (some boards use bus 0)")
+
         
 def main():
     global rot_sw1, rot_sw2, twin
@@ -282,7 +306,7 @@ def main():
         if is_use_lcd:
             thread_lcd = threading.Thread(
                 target=lcd_display_thread,
-                args=(lcd, 1),
+                args=(lcd, i2c_can, twin, 1),
                 daemon=True,
                 name="lcd",
             )

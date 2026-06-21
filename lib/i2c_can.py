@@ -46,6 +46,7 @@ class I2C_CAN:
         self.event_can_received = event_can_received
         self.is_silent = is_silent
         self.last_recv_raw = None
+        self.prev_valid_data = None
     
     def init_i2c_can(self, i2c_ch: int=1, i2c_addr: int =DEFAULT_I2C_ADDR, is_silent=True):
         """Initialize I2C-CAN module with retry."""
@@ -70,7 +71,6 @@ class I2C_CAN:
     
     def check_i2c_can_thread(self, is_silent=True):
         """I2C CAN thread."""
-        global data, logfile, prev_valid_data
         i2c_error_count = 0
         try:
             while True:
@@ -81,8 +81,8 @@ class I2C_CAN:
                             break
                         msg = self.read_can()
                         if msg is not None and msg.is_valid_can_msg():
-                            data = msg
-                            prev_valid_data = msg
+                            self.data = msg
+                            self.prev_valid_data = msg
                             if self.event_can_received:
                                 self.event_can_received(msg)
                             elif not is_silent:
@@ -92,12 +92,12 @@ class I2C_CAN:
                     i2c_error_count = 0
                 except OSError as err:
                     i2c_error_count += 1
-                    data = None
+                    self.data = []
                     if i2c_error_count == 1 or i2c_error_count % 10 == 0:
                         if not is_silent:
                             print(f"I2C read failed ({i2c_error_count}): {err}")
                 except Exception as err:
-                    data = None
+                    self.data = []
                     if not is_silent:
                         print(f"check_i2c_can_thread error: {err}")
                 time.sleep(0.01)
@@ -323,6 +323,9 @@ class I2C_CAN:
             raise ValueError(f"filter num must be 0-5, got {num}")
         self.__set_reg(filt_regs[num], dta)
         time.sleep(0.050)
+        
+    def clear_prev_valid_data(self):
+        self.prev_valid_data = None
 
 
     class I2C_CAN_REG(Enum):
